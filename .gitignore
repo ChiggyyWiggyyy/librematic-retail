@@ -41,3 +41,20 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Security: Ignore Environment Variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Dependencies
+node_modules/
+.expo/
+dist/
+web-build/
+
+# OS Junk
+.DS_Store
+Thumbs.db
