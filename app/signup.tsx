@@ -7,41 +7,59 @@ export default function SignUpScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   
-  // Form State
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
 
+  // Helper for Alerts (Web vs Mobile)
+  const alertUser = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   async function handleSignUp() {
-    // 1. Validation
+    // 1. Basic Validation
     if (!email || !password || !username || !fullName) {
       return alertUser('Missing Info', 'Please fill in all fields.');
     }
     
-    // Username constraints
     const usernameRegex = /^[a-zA-Z0-9]{5,12}$/;
     if (!usernameRegex.test(username)) {
-      return alertUser('Invalid Username', 'Username must be 5-12 characters long and contain only letters or numbers.');
+      return alertUser('Invalid Username', 'Username must be 5-12 chars (letters/numbers only).');
     }
 
     setLoading(true);
     const redirectTo = getAuthRedirect();
 
     try {
-      // 2. Check if Username is taken (Manual Check)
+      // 2. CHECK: Is Username Taken?
       const { data: existingUser } = await supabase
         .from('profiles')
         .select('username')
         .eq('username', username)
-        .single();
+        .maybeSingle(); // Safe check
 
       if (existingUser) {
-        throw new Error('This username is already taken. Please choose another.');
+        throw new Error('This username is already taken but you are not.');
       }
 
-      // 3. Sign Up
-      const { error } = await supabase.auth.signUp({
+      // 3. CHECK: Is Email Taken? (Pre-check via profiles)
+      const { data: existingEmail } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (existingEmail) {
+        throw new Error('This email is already registered. Please Log In.');
+      }
+
+      // 4. Attempt Sign Up
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -53,15 +71,16 @@ export default function SignUpScreen() {
         }
       });
 
-      if (error) {
-        // Handle specific Supabase errors
-        if (error.message.includes('already registered')) {
-          throw new Error('This email is already in use. Think again, Loser!!!.');
-        }
-        throw error;
-      } 
-      
-      // 4. SUCCESS: Clear Form & Show Message
+      if (error) throw error;
+
+      // 5. Handling "User Already Exists" logic from Auth provider
+      // Sometimes Supabase returns success but with a null session if user exists but unverified
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        throw new Error('This email is already registered Loser!!!');
+      }
+
+      // 6. SUCCESS
+      // Clear fields to prevent double submission
       setEmail('');
       setPassword('');
       setUsername('');
@@ -69,27 +88,22 @@ export default function SignUpScreen() {
       
       alertUser(
         'Success', 
-        'Thanks for trusting us, now you are cooked. Guess What ??Check email for the link.'
+        'Thanks for trusting us, now you are cooked. Check email for the verification cookie.'
       );
       
-      // Optional: Redirect to login after they read the message
-      // router.back(); 
+      // Optional: Send them back to login after a delay
+      setTimeout(() => router.replace('/'), 2000);
 
     } catch (err: any) {
-      alertUser('Registration Failed', err.message);
+      let msg = err.message;
+      if (msg.includes('already registered') || msg.includes('unique constraint')) {
+        msg = 'You think you are so smart? Guess What Loser!! try again with some other user/email';
+      }
+      alertUser('Registration Failed', msg);
     } finally {
       setLoading(false);
     }
   }
-
-  // Helper to handle Web vs Mobile alerts
-  const alertUser = (title: string, message: string) => {
-    if (Platform.OS === 'web') {
-      window.alert(`${title}: ${message}`);
-    } else {
-      Alert.alert(title, message);
-    }
-  };
 
   return (
     <View style={styles.container}>
