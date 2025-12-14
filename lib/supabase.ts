@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import * as Linking from 'expo-linking'; // We need this back!
+import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 
@@ -8,25 +8,31 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // 1. SAFETY STORAGE WRAPPER
-// This prevents the "Window is not defined" crash on the server
+// Prevents "window is not defined" crashes on the server, while working on mobile
 const ExpoStorage = {
-  getItem: (key: string) => {
-    if (Platform.OS === 'web' && typeof window === 'undefined') {
-      return Promise.resolve(null);
+  getItem: async (key: string) => {
+    if (Platform.OS === 'web' && typeof window === 'undefined') return null;
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch (e) {
+      return null;
     }
-    return AsyncStorage.getItem(key);
   },
-  setItem: (key: string, value: string) => {
-    if (Platform.OS === 'web' && typeof window === 'undefined') {
-      return Promise.resolve();
+  setItem: async (key: string, value: string) => {
+    if (Platform.OS === 'web' && typeof window === 'undefined') return;
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch (e) {
+      // Ignore write errors
     }
-    return AsyncStorage.setItem(key, value);
   },
-  removeItem: (key: string) => {
-    if (Platform.OS === 'web' && typeof window === 'undefined') {
-      return Promise.resolve();
+  removeItem: async (key: string) => {
+    if (Platform.OS === 'web' && typeof window === 'undefined') return;
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch (e) {
+      // Ignore delete errors
     }
-    return AsyncStorage.removeItem(key);
   },
 };
 
@@ -40,7 +46,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// 3. REDIRECT HELPER (This was missing!)
+// 3. ZOMBIE TOKEN FIX (Critical)
+// If the user was deleted in the DB but the phone still remembers them,
+// this catches the error and forces a clean logout.
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESH_NOT_UPDATED') {
+    console.log('Session is dead. Logging out...');
+    supabase.auth.signOut();
+    // Force clear storage just in case
+    AsyncStorage.clear();
+  }
+});
+
+// 4. REDIRECT HELPER
 export const getAuthRedirect = () => {
   if (Platform.OS === 'web') {
     // If on web, return the current website URL
