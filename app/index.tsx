@@ -9,38 +9,46 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleSignIn() {
+async function handleSignIn() {
     setLoading(true);
     try {
       let emailToUse = loginInput.trim();
 
-      // 1. Detect if input is NOT an email (i.e., it's a username)
+      // 1. Resolve Username to Email
       const isEmail = loginInput.includes('@');
       
       if (!isEmail) {
-        // It's a username! We need to find the email attached to it.
         const { data, error } = await supabase.rpc('get_email_by_username', { uname: loginInput });
         
         if (error || !data) {
           setLoading(false);
-          return Alert.alert('Login Failed', 'Username not found.');
+          // SPECIFIC ERROR 1: Username not found
+          if (Platform.OS === 'web') alert('Login Failed: Username not found.');
+          else Alert.alert('Login Failed', 'Username not found.');
+          return;
         }
-        emailToUse = data; // We found the email!
+        emailToUse = data;
       }
 
-      // 2. Perform Standard Login using the resolved email
+      // 2. Attempt Login
       const { error } = await supabase.auth.signInWithPassword({
         email: emailToUse,
         password,
       });
 
       if (error) {
-        Alert.alert('Login Failed', error.message);
+        // SPECIFIC ERROR 2: Wrong Password or Email
+        let msg = error.message;
+        if (msg.includes('Invalid login credentials')) msg = 'Wrong email or password.';
+        
+        if (Platform.OS === 'web') alert(`Login Failed: ${msg}`);
+        else Alert.alert('Login Failed', msg);
       } else {
         router.replace('/dashboard');
       }
     } catch (err) {
-      Alert.alert('Error', 'Connection error');
+      if (Platform.OS === 'web') alert('System Error: Check internet connection');
+      else Alert.alert('Error', 'Check internet connection');
     }
     setLoading(false);
   }

@@ -1,12 +1,13 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { getAuthRedirect, supabase } from '../lib/supabase';
 
 export default function SignUpScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   
+  // Form State
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -15,20 +16,31 @@ export default function SignUpScreen() {
   async function handleSignUp() {
     // 1. Validation
     if (!email || !password || !username || !fullName) {
-      return Alert.alert('Error', 'Please fill in all fields.');
+      return alertUser('Missing Info', 'Please fill in all fields.');
     }
     
-    // Username constraints: 5-12 chars, alphanumeric
+    // Username constraints
     const usernameRegex = /^[a-zA-Z0-9]{5,12}$/;
     if (!usernameRegex.test(username)) {
-      return Alert.alert('Invalid Username', 'Username must be 5-12 characters long and contain only letters or numbers.');
+      return alertUser('Invalid Username', 'Username must be 5-12 characters long and contain only letters or numbers.');
     }
 
     setLoading(true);
     const redirectTo = getAuthRedirect();
 
     try {
-      // 2. Sign Up with Supabase
+      // 2. Check if Username is taken (Manual Check)
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('username', username)
+        .single();
+
+      if (existingUser) {
+        throw new Error('This username is already taken. Please choose another.');
+      }
+
+      // 3. Sign Up
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -36,26 +48,48 @@ export default function SignUpScreen() {
           emailRedirectTo: redirectTo,
           data: {
             full_name: fullName,
-            username: username // Passing this to the database trigger
+            username: username
           }
         }
       });
 
       if (error) {
-        Alert.alert('Registration Failed', error.message);
-      } else {
-        Alert.alert(
-          'Success!',
-          'Account created. Please check your email for the verification link.',
-          [{ text: 'OK', onPress: () => router.back() }] // Go back to login
-        );
-      }
+        // Handle specific Supabase errors
+        if (error.message.includes('already registered')) {
+          throw new Error('This email is already in use. Think again, Loser!!!.');
+        }
+        throw error;
+      } 
+      
+      // 4. SUCCESS: Clear Form & Show Message
+      setEmail('');
+      setPassword('');
+      setUsername('');
+      setFullName('');
+      
+      alertUser(
+        'Success', 
+        'Thanks for trusting us, now you are cooked. Guess What ??Check email for the link.'
+      );
+      
+      // Optional: Redirect to login after they read the message
+      // router.back(); 
+
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      alertUser('Registration Failed', err.message);
     } finally {
       setLoading(false);
     }
   }
+
+  // Helper to handle Web vs Mobile alerts
+  const alertUser = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
 
   return (
     <View style={styles.container}>
